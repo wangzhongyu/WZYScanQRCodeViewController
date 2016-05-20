@@ -21,15 +21,23 @@
 
 @property (nonatomic, strong) AVCaptureVideoPreviewLayer *captureVideoPreviewLayer;//相机拍摄预览图层，是CALayer的子类，使用该对象可以实时查看拍照或视频录制效果，创建该对象需要指定对应的AVCaptureSession对象
 
+@property (nonatomic, strong) UIView *scanView;
+
 @end
 
 @implementation WZYScanQRCodeViewController
 
+#pragma mark - life cycle
 - (void)viewDidLoad {
     [super viewDidLoad];
     // Do any additional setup after loading the view.
+    [self setupBackButton];
+    if (self.scanSize.width == 0 || self.scanSize.height == 0) {
+        self.scanSize = CGSizeMake(200, 200);
+    }
     if ([WZYScanQRCodeViewController isAvailable]) {
-        [self setConfiguration];
+        [self setupConfiguration];
+        [self setupScanView];
     }
 }
 
@@ -49,15 +57,23 @@
 }
 
 #pragma mark - private
-- (void)back {
-    if (self.navigationController) {
-        [self.navigationController popViewControllerAnimated:true];
-    } else {
-        [self dismissViewControllerAnimated:true completion:^{}];
-    }
+- (void)setupBackButton {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    button.frame = CGRectMake(20, 30, 40, 40);
+    [button setTitle:@"back" forState:UIControlStateNormal];
+    [button setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [button addTarget:self action:@selector(back) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:button];
 }
 
-- (void)setConfiguration {
+- (void)setupScanView {
+    self.scanView = [[UIView alloc] initWithFrame:[self scanRect]];
+    self.scanView.layer.borderColor = [UIColor greenColor].CGColor;
+    self.scanView.layer.borderWidth = 1.0;
+    [self.view addSubview:self.scanView];
+}
+
+- (void)setupConfiguration {
     self.captureSession = [[AVCaptureSession alloc] init];
     if ([self.captureSession canSetSessionPreset:AVCaptureSessionPresetHigh]) {
         self.captureSession.sessionPreset = AVCaptureSessionPresetHigh;
@@ -96,6 +112,8 @@
         //设置输出的格式
         //一定要先设置会话的输出为output之后，再指定输出的元数据类型
         self.captureMetadataOutput.metadataObjectTypes = @[AVMetadataObjectTypeQRCode];
+        //设置扫描区域
+        self.captureMetadataOutput.rectOfInterest = CGRectMake([self scanRect].origin.y / [UIScreen mainScreen].bounds.size.height, [self scanRect].origin.x / [UIScreen mainScreen].bounds.size.width, self.scanSize.height / [UIScreen mainScreen].bounds.size.height, self.scanSize.width / [UIScreen mainScreen].bounds.size.width);
     }
     
     self.captureVideoPreviewLayer = [AVCaptureVideoPreviewLayer layerWithSession:self.captureSession];
@@ -104,14 +122,13 @@
     [self.view.layer insertSublayer:self.captureVideoPreviewLayer atIndex:0];
 }
 
-- (AVCaptureDevice *)getCaptureDeviceWithPosition:(AVCaptureDevicePosition )position {
-    NSArray *captureDevices = [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo];
-    for (AVCaptureDevice *captureDevice in captureDevices) {
-        if (captureDevice.position == position) {
-            return captureDevice;
-        }
+#pragma mark - even respoder
+- (void)back {
+    if (self.navigationController) {
+        [self.navigationController popViewControllerAnimated:true];
+    } else {
+        [self dismissViewControllerAnimated:true completion:^{}];
     }
-    return nil;
 }
 
 #pragma mark - AVCaptureMetadataOutputObjectsDelegate
@@ -129,14 +146,33 @@
     }
 }
 
+#pragma mark - getter
+- (AVCaptureDevice *)getCaptureDeviceWithPosition:(AVCaptureDevicePosition )position {
+    NSArray *captureDevices = [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo];
+    for (AVCaptureDevice *captureDevice in captureDevices) {
+        if (captureDevice.position == position) {
+            return captureDevice;
+        }
+    }
+    return nil;
+}
+
+- (CGRect)scanRect {
+    return CGRectMake(([UIScreen mainScreen].bounds.size.width - self.scanSize.width) * 0.5, ([UIScreen mainScreen].bounds.size.height - self.scanSize.height) * 0.5, self.scanSize.width, self.scanSize.height);
+}
+
+#pragma mark -
 + (BOOL)isAvailable {
     __block BOOL flag = false;
     AVAuthorizationStatus authorizationStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
     switch (authorizationStatus) {
         case AVAuthorizationStatusNotDetermined: {
+            dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);//创建一个信号量，信号量的计数为0
             [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) {
                 flag = granted;
+                dispatch_semaphore_signal(semaphore);//信号量的计数＋1
             }];
+            dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);//信号量的计数－1，之后如果信号量的计数小于0则进入等待
             break;
         }
         case AVAuthorizationStatusRestricted: {

@@ -13,6 +13,7 @@ typedef void(^ScanQRCodeResultHandler)(NSString *result, NSError *error);
 @interface WZYScanQRCodeViewController : UIViewController
 
 @property (nonatomic, copy) ScanQRCodeResultHandler completionHandler;
+@property (nonatomic, assign) CGSize scanSize;
 
 + (BOOL)isAvailable;
 
